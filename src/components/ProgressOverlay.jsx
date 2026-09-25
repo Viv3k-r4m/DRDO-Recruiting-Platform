@@ -1,0 +1,8 @@
+import React from 'react'
+import { CheckCircle2, Loader2 } from 'lucide-react'
+import { motion } from 'framer-motion'
+
+export default function ProgressOverlay({ step, error }) {
+  const steps = ['Reading Documents folder', 'Running OCR on documents', 'Translating multilingual text', 'Cross-verifying documents', 'Checking eligibility']
+  return <div className="rounded-2xl bg-slate-900 p-6 text-white shadow-xl"><div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">Verification pipeline</p><h3 className="mt-1 text-lg font-semibold">{error || steps[step] || 'Preparing...'}</h3></div>{!error && <Loader2 className="animate-spin text-blue-300" />}</div><div className="space-y-3">{steps.map((label, index) => <div key={label} className="flex items-center gap-3 text-sm"><div className={`flex h-6 w-6 items-center justify-center rounded-full ${index < step ? 'bg-emerald-400 text-slate-900' : index === step ? 'bg-blue-400 text-slate-900' : 'bg-slate-700 text-slate-400'}`}>{index < step ? <CheckCircle2 size={15} /> : index + 1}</div><span className={index <= step ? 'text-white' : 'text-slate-500'}>{label}...</span></div>)}</div><motion.div className="mt-5 h-1.5 rounded-full bg-slate-700" initial={{ scaleX: 0, originX: 0 }} animate={{ scaleX: Math.min((step + 1) / steps.length, 1) }}><div className="h-full rounded-full bg-blue-400" /></motion.div></div>
+}
