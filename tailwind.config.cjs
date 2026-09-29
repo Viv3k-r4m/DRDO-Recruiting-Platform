@@ -6,7 +6,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        govblue: '#0b5ed7'
+        drdoblue: '#004890',
+        drdolight: '#005baf',
+        saffron: '#FF9933',
+        indiawhite: '#FFFFFF',
+        indiagreen: '#138808',
+        navy: '#0a192f',
+      },
+      fontFamily: {
+        sans: ['Arial', 'Helvetica', 'sans-serif'],
       }
     }
   },

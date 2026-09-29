@@ -3,9 +3,13 @@
 @tailwind utilities;
 
 @layer base {
-  body { font-family: Georgia, 'Times New Roman', serif; color: #172033; }
+  body { 
+    @apply font-sans text-gray-800 bg-gray-50; 
+  }
 }
 
 @layer components {
-  .card { @apply rounded-2xl bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.07)]; }
+  .card { 
+    @apply rounded bg-white p-6 shadow border border-gray-300 border-t-4 border-t-drdoblue; 
+  }
 }
