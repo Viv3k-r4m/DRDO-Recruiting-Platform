@@ -11,10 +11,10 @@ export default function ApplicantDashboard() {
   const [appData, setAppData] = useState(null)
   
   // Form states
-  const [name, setName] = useState('')
-  const [gate, setGate] = useState('')
   const [uploading, setUploading] = useState(false)
   const [resumeUploading, setResumeUploading] = useState(false)
+  const [files, setFiles] = useState([])
+  const [ocrProgress, setOcrProgress] = useState('')
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
@@ -41,14 +41,53 @@ export default function ApplicantDashboard() {
   async function handleApplicationSubmit(e) {
     e.preventDefault()
     if (!auth.currentUser) return
+    if (files.length === 0) {
+      alert("Please upload your document package.")
+      return
+    }
+    
     setUploading(true)
     
     try {
+      setOcrProgress('Uploading secure documents locally...')
+      
+      const fileDataUrls = []
+      
+      for (const f of files) {
+        setOcrProgress(`Uploading ${f.name}...`)
+        
+        // Read file as Base64 to send to our custom Vite plugin
+        const base64 = await new Promise((resolve) => {
+          const reader = new FileReader()
+          reader.onload = (e) => resolve(e.target.result)
+          reader.readAsDataURL(f)
+        })
+        
+        // Post to our local Vite server endpoint
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            filename: f.name, 
+            base64,
+            applicantId: auth.currentUser.uid
+          })
+        })
+        
+        if (!res.ok) throw new Error('Failed to upload file locally')
+        const data = await res.json()
+        
+        // Save the local URL in Firestore
+        fileDataUrls.push({ name: f.name, data: data.url })
+      }
+      
+      setOcrProgress('Finalizing Application...')
+      
       await addDoc(collection(db, 'applications'), {
         uid: auth.currentUser.uid,
         email: auth.currentUser.email,
-        name: name,
-        gate: parseInt(gate, 10),
+        name: "Pending AI Extraction",
+        documents: fileDataUrls,
         status: 'Pending',
         role: null,
         createdAt: serverTimestamp(),
@@ -56,9 +95,10 @@ export default function ApplicantDashboard() {
       })
     } catch (err) {
       console.error('Error submitting application:', err)
-      alert('Failed to submit application. Ensure Firebase is configured properly.')
+      alert('Upload failed! Check console.')
     } finally {
       setUploading(false)
+      setOcrProgress('')
     }
   }
 
@@ -130,14 +170,9 @@ export default function ApplicantDashboard() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white border border-gray-300 shadow-md rounded p-8 border-t-4 border-t-drdoblue">
             <h2 className="text-2xl font-bold text-drdoblue mb-6 border-b-2 border-gray-200 pb-2">New Application (SIH1652)</h2>
             <form onSubmit={handleApplicationSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Full Name</label>
-                  <input required type="text" value={name} onChange={e=>setName(e.target.value)} className="w-full border border-gray-300 p-2 rounded bg-gray-50 focus:bg-white" placeholder="As per documents" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">GATE Score (Out of 1000)</label>
-                  <input required type="number" value={gate} onChange={e=>setGate(e.target.value)} className="w-full border border-gray-300 p-2 rounded bg-gray-50 focus:bg-white" placeholder="e.g. 750" />
+              <div className="grid grid-cols-1 gap-4">
+                <div className="bg-blue-50 border border-blue-200 p-4 rounded text-sm text-blue-800">
+                  <p><strong>Note:</strong> Your official Candidate Name will be automatically extracted from your uploaded <code>application_form.pdf</code> using our AI engine.</p>
                 </div>
               </div>
               
@@ -146,13 +181,24 @@ export default function ApplicantDashboard() {
                 <div className="border-2 border-dashed border-gray-300 p-8 text-center rounded bg-gray-50">
                   <UploadCloud className="mx-auto text-gray-400 mb-2" size={32} />
                   <p className="text-sm text-gray-600 font-semibold mb-2">Drag and drop document package here</p>
-                  <input required type="file" multiple className="text-sm text-gray-500" />
+                  <input required type="file" multiple onChange={e => setFiles(e.target.files)} className="text-sm text-gray-500" />
+                  {files.length > 0 && (
+                    <p className="text-xs text-green-600 font-bold mt-2">{files.length} file(s) selected.</p>
+                  )}
                 </div>
               </div>
 
               <button type="submit" disabled={uploading} className="w-full bg-drdoblue text-white font-bold py-3 rounded mt-4 hover:bg-drdolight transition-colors shadow disabled:opacity-70">
-                {uploading ? 'Uploading & Submitting...' : 'Submit Application'}
+                {uploading ? 'Processing Documents...' : 'Submit Application'}
               </button>
+
+              {uploading && ocrProgress && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded text-center">
+                  <div className="animate-spin h-6 w-6 border-2 border-drdoblue border-t-transparent rounded-full mx-auto mb-2"></div>
+                  <p className="text-sm font-bold text-drdoblue">{ocrProgress}</p>
+                  <p className="text-xs text-gray-500 mt-1">Please do not close this window. Machine learning models are extracting text from your documents locally to ensure privacy.</p>
+                </div>
+              )}
             </form>
           </motion.div>
         ) : (
@@ -190,7 +236,18 @@ export default function ApplicantDashboard() {
                   <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-gray-50 border border-gray-200 p-4 rounded shadow-sm">
                     <h4 className="font-bold text-gray-800">Verification Engine (AI & Admin)</h4>
                     {appData.status === 'Pending' && <p className="text-xs text-saffron font-bold mt-1">Verification Pending...</p>}
-                    {appData.status === 'Rejected' && <p className="text-xs text-red-600 font-bold mt-1">Not Eligible. Does not meet GATE criteria.</p>}
+                    {appData.status === 'Rejected' && (
+                      <div className="mt-1">
+                        <p className="text-xs text-red-600 font-bold">Application Rejected.</p>
+                        {appData.extractedData?.tamperAlerts?.length > 0 ? (
+                          <ul className="list-disc list-inside text-xs text-red-500 mt-1">
+                            {appData.extractedData.tamperAlerts.map((alert, i) => <li key={i}>{alert}</li>)}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-red-500 mt-1">Does not meet required GATE/Eligibility criteria.</p>
+                        )}
+                      </div>
+                    )}
                     {(appData.status === 'Eligible' || appData.status.includes('Resume')) && <p className="text-xs text-green-600 font-bold mt-1">Verified & Eligible! Documents matched successfully.</p>}
                   </div>
                 </div>

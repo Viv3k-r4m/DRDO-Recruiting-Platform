@@ -27,7 +27,16 @@ async function pdfToCanvas(blob) {
 export async function recognizeDocument(blob, name, onProgress) {
   const source = await (/\.pdf$/i.test(name) ? pdfToCanvas(blob) : blobToCanvas(blob))
   const previewUrl = source.toDataURL('image/png')
-  const worker = await createWorker(['eng', 'hin'])
+  
+  // Create worker with real progress tracking
+  const worker = await createWorker(['eng', 'hin'], 1, {
+    logger: m => {
+      if (m.status === 'recognizing text') {
+        onProgress?.(Math.round(m.progress * 100))
+      }
+    }
+  })
+  
   const result = await worker.recognize(source)
   await worker.terminate()
   onProgress?.(100)
