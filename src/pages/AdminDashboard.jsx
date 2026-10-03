@@ -7,6 +7,7 @@ import { collection, onSnapshot, doc, writeBatch } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import ComparisonTable from '../components/ComparisonTable'
 import { recognizeAll } from '../utils/ocr'
+import { extractBtech, extractCategory, extractFatherName } from '../utils/adminDocumentFields'
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -14,6 +15,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('Pending')
   const [isVerifying, setIsVerifying] = useState(false)
   const [roleFilter, setRoleFilter] = useState('All')
+  const [verificationQueue, setVerificationQueue] = useState([])
   
   // Modal State
   const [showVerificationModal, setShowVerificationModal] = useState(false)
@@ -45,7 +47,9 @@ export default function AdminDashboard() {
     return () => unsubscribeAuth()
   }, [])
 
-  async function handleBatchVerify() {
+  async function handleBatchVerify(appsToVerify = pendingApps) {
+    if (!appsToVerify.length) return
+    setVerificationQueue(appsToVerify)
     setIsVerifying(true)
     setShowVerificationModal(true)
     
@@ -53,9 +57,9 @@ export default function AdminDashboard() {
       const batch = writeBatch(db)
       let processed = 0
       
-      for (let i = 0; i < pendingApps.length; i++) {
+      for (let i = 0; i < appsToVerify.length; i++) {
         setVerifyingIndex(i)
-        const app = pendingApps[i]
+        const app = appsToVerify[i]
         
         setModalState('Downloading applicant documents...')
         
@@ -127,13 +131,11 @@ export default function AdminDashboard() {
             // 2. Fetch Father's Name
             let officialFatherName = ''
             if (appFormDoc) {
-               const fNameMatch = appFormDoc.text.match(/(?:father's name|name of father|father name)[^a-z]*([A-Za-z\s]{3,30})/is)
-               if (fNameMatch) officialFatherName = fNameMatch[1].trim()
+              officialFatherName = extractFatherName(appFormDoc.text)
             }
             if (!officialFatherName) {
                const fullTextForFName = ocrResults.map(r => r.text).join('\n')
-               const fNameMatch = fullTextForFName.match(/(?:father's name|name of father|father name)[^a-z]*([A-Za-z\s]{3,30})/is)
-               if (fNameMatch) officialFatherName = fNameMatch[1].trim()
+              officialFatherName = extractFatherName(fullTextForFName)
             }
             if (!officialFatherName) officialFatherName = 'SRI ' + officialName.toUpperCase()
 
@@ -223,21 +225,10 @@ export default function AdminDashboard() {
             }
             
             const btechText = getDocText(['college', 'btech', 'degree', 'university', 'b.e', 'transcript', 'semester'])
-            const btechMatch = btechText.match(/(?:b\.?tech|b\.?e\.?|degree|bachelor)[\s\S]{0,100}?(?:cgpa|%|marks)[\s\S]{0,30}?([5-9](?:\.\d+)?|[4-9]\d(?:\.\d+)?)/is)
-            let extractedBtech = '0 CGPA'
-            if (btechMatch) {
-                const val = parseFloat(btechMatch[1])
-                extractedBtech = val > 10 ? `${val}%` : `${val} CGPA`
-            } else {
-                const cgpaFallback = btechText.match(/(?:cgpa)[\s\S]{0,20}?([6-9](?:\.\d+)?)/is)
-                if (cgpaFallback) extractedBtech = `${cgpaFallback[1]} CGPA`
-            }
+            const extractedBtech = extractBtech(btechText)
             
             const casteText = getDocText(['caste', 'category', 'community'])
-            const categoryMatch = casteText.match(/(OBC-NCL|OBC|GENERAL|UR|SC|ST|EWS)/is)
-            let extractedCategory = categoryMatch ? categoryMatch[1].toUpperCase() : 'GENERAL'
-            if (extractedCategory === 'UR' || extractedCategory === 'GENERAL') extractedCategory = 'UR'
-            if (extractedCategory === 'OBC') extractedCategory = 'OBC-NCL'
+            const extractedCategory = extractCategory(casteText)
             
             const extractedName = officialName
             
@@ -367,7 +358,7 @@ export default function AdminDashboard() {
               <div className="bg-gray-100 px-4 py-3 border-b border-gray-300 flex justify-between items-center">
                 <span className="font-bold text-gray-700">Awaiting AI Document Verification ({pendingApps.length})</span>
                 <button 
-                  onClick={handleBatchVerify}
+                  onClick={() => handleBatchVerify()}
                   disabled={isVerifying || pendingApps.length === 0}
                   className={`flex items-center gap-2 px-4 py-2 rounded font-bold text-sm text-white transition-colors shadow ${isVerifying || pendingApps.length === 0 ? 'bg-gray-400' : 'bg-drdoblue hover:bg-drdolight'}`}
                 >
@@ -536,11 +527,16 @@ export default function AdminDashboard() {
                         <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
                         <td className="p-3 text-gray-800">{app.name}</td>
                         <td className="p-3 font-bold text-red-600">{app.gate}</td>
-                        <td className="p-3 flex items-center justify-between">
+                        <td className="p-3 flex items-center justify-between gap-3">
                           <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded border border-red-200">REJECTED</span>
-                          <button onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} className="text-xs font-bold text-blue-600 hover:underline">
-                            {expandedAppId === app.id ? 'Hide OCR' : 'View OCR Details'}
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => handleBatchVerify([app])} disabled={isVerifying} className="text-xs font-bold text-drdoblue hover:underline disabled:opacity-50">
+                              Re-run AI
+                            </button>
+                            <button onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} className="text-xs font-bold text-blue-600 hover:underline">
+                              {expandedAppId === app.id ? 'Hide OCR' : 'View OCR Details'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {expandedAppId === app.id && (
@@ -614,12 +610,12 @@ export default function AdminDashboard() {
         </div>
       </main>
 
-      {showVerificationModal && pendingApps[verifyingIndex] && (
+      {showVerificationModal && verificationQueue[verifyingIndex] && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b-2 border-gray-200 pb-2 mb-4">
               <h3 className="text-xl font-bold text-drdoblue">
-                Scanning Candidate: <span className="text-gray-800">{pendingApps[verifyingIndex].name}</span>
+                Scanning Candidate: <span className="text-gray-800">{verificationQueue[verifyingIndex].name}</span>
               </h3>
             </div>
             
