@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { LogOut, CheckCircle, AlertTriangle, Play } from 'lucide-react'
 import { auth, db } from '../firebase'
-import { collection, onSnapshot, doc, writeBatch } from 'firebase/firestore'
+import { collection, onSnapshot, doc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import ComparisonTable from '../components/ComparisonTable'
 import { recognizeAll } from '../utils/ocr'
@@ -49,13 +49,20 @@ export default function AdminDashboard() {
 
   async function handleBatchVerify(appsToVerify = pendingApps) {
     if (!appsToVerify.length) return
+    const appsWithoutEmail = appsToVerify.filter(app => !app.email?.trim())
+    if (appsWithoutEmail.length > 0) {
+      alert(`Cannot complete verification: ${appsWithoutEmail.length} application(s) do not have an email address.`)
+      return
+    }
+
     setVerificationQueue(appsToVerify)
     setIsVerifying(true)
     setShowVerificationModal(true)
     
     try {
-      const batch = writeBatch(db)
+      let batch = writeBatch(db)
       let processed = 0
+      let queuedEmails = 0
       
       for (let i = 0; i < appsToVerify.length; i++) {
         setVerifyingIndex(i)
@@ -267,18 +274,61 @@ export default function AdminDashboard() {
         const newStatus = (app.extractedData.tamperAlerts && app.extractedData.tamperAlerts.length > 0) 
             ? 'Rejected' 
             : (app.extractedData.gate >= 700 ? 'Eligible' : 'Rejected')
+
+        const eligibilityReasons = []
+        if (newStatus === 'Rejected') {
+          if (!app.documents?.length) {
+            eligibilityReasons.push('No applicant documents were available for verification.')
+          }
+          if (app.extractedData.tamperAlerts?.length) {
+            eligibilityReasons.push(...app.extractedData.tamperAlerts)
+          }
+          if (app.extractedData.gate < 700) {
+            eligibilityReasons.push(
+              app.extractedData.gate > 0
+                ? `The extracted GATE score (${app.extractedData.gate}) is below the required minimum of 700.`
+                : 'A valid GATE score could not be extracted; the required minimum is 700.'
+            )
+          }
+        }
             
         batch.update(appRef, { 
            status: newStatus, 
            name: app.extractedData.name,
            gate: app.extractedData.gate,
-           extractedData: app.extractedData
+           extractedData: app.extractedData,
+           eligibilityReasons,
+           verifiedAt: serverTimestamp()
         })
+
+        const applicantName = app.extractedData.name || app.name || 'Applicant'
+        const resultLabel = newStatus === 'Eligible' ? 'ELIGIBLE' : 'NOT ELIGIBLE'
+        const reasonText = eligibilityReasons.length
+          ? `\n\nReason(s):\n${eligibilityReasons.map(reason => `- ${reason}`).join('\n')}`
+          : '\n\nYou meet the eligibility criteria based on the documents reviewed.'
+        const emailRef = doc(collection(db, 'mail'))
+        batch.set(emailRef, {
+          to: app.email.trim(),
+          message: {
+            subject: `Eligibility result: ${resultLabel} - RAC/DRDO application`,
+            text: `Dear ${applicantName},\n\nThe eligibility review for your RAC/DRDO application is complete.\n\nResult: ${resultLabel}\nApplication ID: ${app.id}${reasonText}\n\nRegards,\nRecruitment & Assessment Centre (RAC)`
+          }
+        })
+        queuedEmails++
         processed++
+
+        if (processed % 250 === 0) {
+          setModalState('Saving verification results and queueing result emails...')
+          await batch.commit()
+          batch = writeBatch(db)
+        }
       }
       
-      if (processed > 0) {
+      if (processed % 250 !== 0) {
         await batch.commit()
+      }
+      if (processed > 0) {
+        alert(`Verification complete. ${processed} application(s) processed; ${queuedEmails} result email(s) queued.`)
       }
       
     } catch (err) {

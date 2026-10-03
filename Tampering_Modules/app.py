@@ -1,46 +1,64 @@
 from flask import Flask, render_template, request
 import cv2
 import numpy as np
+import tensorflow as tf
 from ultralytics import YOLO
 from PIL import Image, ImageChops, ImageEnhance
+from io import BytesIO
 import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "static/outputs"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+OUTPUT_FOLDER = os.path.join(BASE_DIR, "static", "outputs")
+MODEL_FOLDER = os.path.join(BASE_DIR, "model")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# 🔹 Load models (TensorFlow removed for lightweight processing)
-yolo_model = YOLO("yolov8n.pt")  # lightweight pretrained
-
 IMG_SIZE = 128
+TAMPER_THRESHOLD = 0.5
+tamper_models = {
+    "tamper_cnn": tf.keras.models.load_model(
+        os.path.join(MODEL_FOLDER, "tamper_cnn.h5"), compile=False
+    ),
+    "aiforge_doc_cnn": tf.keras.models.load_model(
+        os.path.join(MODEL_FOLDER, "aiforge_doc_cnn.keras"), compile=False
+    ),
+}
+yolo_model = YOLO(os.path.join(BASE_DIR, "yolov8n.pt"))
 
-# ---------------- Lightweight ELA Prediction ----------------
+# ---------------- CNN Tamper Prediction ----------------
 def predict_tamper(image_path):
-    # Using lightweight Error Level Analysis (ELA) statistics instead of heavy CNN
-    ela_img = get_ela_image(image_path)
-    gray = cv2.cvtColor(ela_img, cv2.COLOR_BGR2GRAY)
-    
-    # Analyze the standard deviation (variance in compression artifacts)
-    std_val = np.std(gray)
-    mean_val = np.mean(gray)
-    
-    # Normalize score between 0 and 1 using an empirical threshold
-    # High standard deviation indicates localized tampering
-    pred = min(std_val / 40.0, 1.0) 
-    
-    label = "Tampered" if pred > 0.55 else "Authentic"
-    return label, float(pred)
+    with Image.open(image_path) as image:
+        image = image.convert("RGB").resize((IMG_SIZE, IMG_SIZE))
+        input_tensor = np.asarray(image, dtype=np.float32) / 255.0
+    input_tensor = np.expand_dims(input_tensor, axis=0)
+
+    model_scores = {
+        name: float(np.asarray(model.predict(input_tensor, verbose=0)).reshape(-1)[0])
+        for name, model in tamper_models.items()
+    }
+    is_tampered = any(score >= TAMPER_THRESHOLD for score in model_scores.values())
+    label = "Tampered" if is_tampered else "Authentic"
+    strongest_tamper_score = max(model_scores.values())
+    confidence = (
+        strongest_tamper_score
+        if is_tampered
+        else 1.0 - strongest_tamper_score
+    )
+    return label, float(confidence), model_scores
 
 # ---------------- ELA Bounding Boxes ----------------
 def get_ela_image(path, quality=90):
-    original = Image.open(path).convert('RGB')
-    temp_path = "temp.jpg"
-    original.save(temp_path, 'JPEG', quality=quality)
-    compressed = Image.open(temp_path)
+    with Image.open(path) as source:
+        original = source.convert("RGB")
+    temp_image = BytesIO()
+    original.save(temp_image, "JPEG", quality=quality)
+    temp_image.seek(0)
+    compressed = Image.open(temp_image)
 
     ela = ImageChops.difference(original, compressed)
 
@@ -89,11 +107,14 @@ def index():
     if request.method == "POST":
         file = request.files["file"]
 
-        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        filename = secure_filename(file.filename)
+        if not filename:
+            return "Please select a valid file.", 400
+
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
 
-        # CNN
-        label, confidence = predict_tamper(filepath)
+        label, confidence, model_scores = predict_tamper(filepath)
 
         # ELA
         image, tamper_regions = detect_tamper_regions(filepath)
@@ -101,15 +122,16 @@ def index():
         # YOLO
         image, seal_count = detect_seal(image)
 
-        output_path = os.path.join(OUTPUT_FOLDER, file.filename)
+        output_path = os.path.join(OUTPUT_FOLDER, filename)
         cv2.imwrite(output_path, image)
 
         return render_template("index.html",
                                result=label,
-                               confidence=round(confidence, 2),
+                               confidence=confidence,
+                               model_scores=model_scores,
                                tamper_regions=tamper_regions,
                                seals=seal_count,
-                               image_path=file.filename)
+                               image_path=filename)
 
     return render_template("index.html")
 
@@ -119,21 +141,26 @@ def check_tamper_api():
         return {"error": "No file provided"}, 400
         
     file = request.files["file"]
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    filename = secure_filename(file.filename)
+    if not filename:
+        return {"error": "Invalid file name"}, 400
+
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
     
-    label, confidence = predict_tamper(filepath)
+    label, confidence, model_scores = predict_tamper(filepath)
     image, tamper_regions = detect_tamper_regions(filepath)
     image, seal_count = detect_seal(image)
     
     # Save output image so frontend can display the ELA/YOLO bounding boxes if needed
-    output_filename = "processed_" + file.filename
+    output_filename = "processed_" + filename
     output_path = os.path.join(OUTPUT_FOLDER, output_filename)
     cv2.imwrite(output_path, image)
     
     return {
         "result": label,
         "confidence": round(float(confidence), 2),
+        "model_scores": model_scores,
         "tamper_regions": tamper_regions,
         "seals": seal_count,
         "output_image_url": f"http://127.0.0.1:5000/static/outputs/{output_filename}"

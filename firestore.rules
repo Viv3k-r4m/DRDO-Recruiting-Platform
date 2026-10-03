@@ -17,5 +17,11 @@ service cloud.firestore {
         
       allow delete: if request.auth != null && request.auth.token.email == 'admin@rac.gov.in';
     }
+
+    match /mail/{mailId} {
+      allow create: if request.auth != null &&
+        request.auth.token.email == 'admin@rac.gov.in';
+      allow read, update, delete: if false;
+    }
   }
 }

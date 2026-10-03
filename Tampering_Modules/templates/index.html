@@ -57,8 +57,14 @@
                         <div class="mt-4 space-y-3">
                             <div class="flex justify-between">
                                 <span class="text-gray-600">AI Confidence:</span>
-                                <span class="font-mono font-bold text-indigo-600">{{ confidence }}%</span>
+                                <span class="font-mono font-bold text-indigo-600">{{ (confidence * 100)|round(1) }}%</span>
                             </div>
+                            {% for model_name, score in model_scores.items() %}
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-500">{{ model_name }} tamper score:</span>
+                                <span class="font-mono">{{ (score * 100)|round(1) }}%</span>
+                            </div>
+                            {% endfor %}
                             <div class="flex justify-between">
                                 <span class="text-gray-600">Seals Detected:</span>
                                 <span class="font-semibold">{{ seals }}</span>

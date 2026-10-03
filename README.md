@@ -49,3 +49,9 @@ Notes:
 - Login: `admin@rac.gov.in` / `admin123`.
 - OCR language packs are downloaded by Tesseract.js on first use, so the first run can take a little longer.
 - Ollama is optional at runtime because the deterministic fallback remains available.
+
+## Eligibility result emails
+
+When an admin completes verification, the application result and a plain-text email are queued in Firestore's `mail` collection. Rejected emails include the specific verification issues and eligibility reason. To deliver queued emails, install Firebase's **Trigger Email from Firestore** extension and configure it to watch the `mail` collection with your SMTP provider and sender address. Keep SMTP credentials in the extension's server-side configuration; do not add them to the Vite environment or frontend.
+
+Deploy `firestore.rules` after configuring the extension. The rules allow only the RAC admin account to enqueue messages and prevent clients from reading or modifying the queue. The extension processes queued documents and reports delivery errors in Firebase.
