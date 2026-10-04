@@ -108,19 +108,35 @@ export default function ApplicantDashboard() {
     setResumeUploading(true)
     
     try {
-      // Mock NLP role extraction based on filename
-      const text = file.name.toLowerCase()
-      let role = 'Technical Officer'
-      if(text.includes('ai') || text.includes('data')) role = 'Scientist B (AI)'
-      if(text.includes('cyber') || text.includes('security')) role = 'Scientist B (Cybersecurity)'
+      // 1. Upload Resume locally using existing endpoint
+      const base64 = await new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onload = (e) => resolve(e.target.result)
+        reader.readAsDataURL(file)
+      })
+      
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          filename: `resume_${file.name}`, 
+          base64,
+          applicantId: auth.currentUser.uid
+        })
+      })
+      
+      if (!res.ok) throw new Error('Failed to upload resume')
+      const data = await res.json()
 
+      // 2. Update Firestore Status (No role assignment yet, Admin does that)
       const appRef = doc(db, 'applications', appData.id)
       await updateDoc(appRef, {
         status: 'ResumeSubmitted',
-        role: role
+        resumeUrl: data.url
       })
     } catch (err) {
       console.error('Error uploading resume:', err)
+      alert("Failed to upload resume.")
     } finally {
       setResumeUploading(false)
     }
@@ -252,19 +268,17 @@ export default function ApplicantDashboard() {
                   </div>
                 </div>
 
-                {(appData.status === 'Eligible' || appData.status.includes('Resume')) && (
+                {(appData.status === 'Eligible' || appData.status.includes('Resume') || appData.status === 'RoleAssigned') && (
                   <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                    <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 ${appData.status === 'ResumeRequested' ? 'bg-drdoblue text-white animate-bounce' : (appData.status === 'ResumeSubmitted' ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-500')}`}>
+                    <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 ${appData.status === 'Eligible' ? 'bg-drdoblue text-white animate-bounce' : 'bg-green-500 text-white'}`}>
                       <FileSearch size={18} />
                     </div>
-                    <div className={`w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded shadow-sm ${appData.status === 'ResumeRequested' ? 'bg-blue-50 border-2 border-drdoblue' : 'bg-gray-50 border border-gray-200'}`}>
+                    <div className={`w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded shadow-sm ${appData.status === 'Eligible' ? 'bg-blue-50 border-2 border-drdoblue' : 'bg-gray-50 border border-gray-200'}`}>
                       <h4 className="font-bold text-gray-800">Resume Upload & Role Mapping</h4>
                       
-                      {appData.status === 'Eligible' && <p className="text-xs text-gray-500 mt-1">Awaiting admin request for resume.</p>}
-                      
-                      {appData.status === 'ResumeRequested' && (
+                      {appData.status === 'Eligible' && (
                         <div className="mt-3">
-                          <p className="text-xs font-bold text-drdoblue mb-2">Admin has requested your resume for Role Assignment!</p>
+                          <p className="text-xs font-bold text-drdoblue mb-2">Congratulations! Please upload your resume for Final Role Assignment.</p>
                           {!resumeUploading ? (
                             <label className="cursor-pointer block bg-drdoblue text-white text-center py-2 rounded text-sm font-bold shadow hover:bg-drdolight transition-colors">
                               <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleResumeSubmit} />
@@ -272,15 +286,22 @@ export default function ApplicantDashboard() {
                             </label>
                           ) : (
                             <div className="text-xs font-bold text-drdoblue flex items-center gap-2">
-                              <div className="animate-spin h-4 w-4 border-2 border-drdoblue border-t-transparent rounded-full"></div> Uploading & Analyzing...
+                              <div className="animate-spin h-4 w-4 border-2 border-drdoblue border-t-transparent rounded-full"></div> Uploading...
                             </div>
                           )}
                         </div>
                       )}
 
                       {appData.status === 'ResumeSubmitted' && (
+                        <div className="mt-2 text-saffron">
+                          <p className="text-xs font-bold mb-1">Resume Submitted Successfully.</p>
+                          <p className="text-sm font-bold">Awaiting Admin AI Analysis & Assignment...</p>
+                        </div>
+                      )}
+                      
+                      {appData.status === 'RoleAssigned' && (
                         <div className="mt-2 text-green-700">
-                          <p className="text-xs font-bold mb-1">Resume Submitted & Parsed.</p>
+                          <p className="text-xs font-bold mb-1">Role Assigned Successfully!</p>
                           <p className="text-sm font-black uppercase border border-green-200 bg-green-100 inline-block px-2 py-1 rounded">Mapped Role: {appData.role}</p>
                         </div>
                       )}

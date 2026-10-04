@@ -22,6 +22,13 @@ export default function AdminDashboard() {
   const [verifyingIndex, setVerifyingIndex] = useState(0)
   const [modalState, setModalState] = useState('')
   const [expandedAppId, setExpandedAppId] = useState(null)
+  
+  // AI Role Assignment State
+  const [showRoleModal, setShowRoleModal] = useState(false)
+  const [selectedAppForRole, setSelectedAppForRole] = useState(null)
+  const [aiSuggestedRole, setAiSuggestedRole] = useState('')
+  const [customRole, setCustomRole] = useState('')
+  const [isAssigningRole, setIsAssigningRole] = useState(false)
 
   const pendingApps = apps.filter(a => a.status === 'Pending')
   const eligibleApps = apps.filter(a => ['Eligible', 'ResumeRequested', 'ResumeSubmitted'].includes(a.status))
@@ -46,6 +53,64 @@ export default function AdminDashboard() {
     })
     return () => unsubscribeAuth()
   }, [])
+
+  const openRoleModal = (app) => {
+    setSelectedAppForRole(app)
+    setCustomRole('')
+    // Basic AI Heuristic for Role based on their existing GATE paper (extractedData.paper)
+    const paper = app.extractedData?.paper || 'CS'
+    let suggestion = 'Scientist B (Computer Science)'
+    if (paper === 'EC') suggestion = 'Scientist B (Electronics & Comm)'
+    if (paper === 'ME') suggestion = 'Scientist B (Mechanical Engineering)'
+    if (paper === 'EE') suggestion = 'Scientist B (Electrical Engineering)'
+    if (paper === 'CE') suggestion = 'Scientist B (Civil Engineering)'
+    
+    setAiSuggestedRole(suggestion)
+    setShowRoleModal(true)
+  }
+
+  const handleAssignRole = async () => {
+    if (!selectedAppForRole || (!customRole && !aiSuggestedRole)) return
+    setIsAssigningRole(true)
+    const finalRole = customRole || aiSuggestedRole
+    
+    try {
+      // 1. Update Firestore
+      const appRef = doc(db, 'applications', selectedAppForRole.id)
+      await writeBatch(db).update(appRef, {
+        status: 'RoleAssigned',
+        role: finalRole,
+        assignedAt: serverTimestamp()
+      }).commit()
+      
+      // 2. Dispatch Email to Applicant
+      const applicantName = selectedAppForRole.extractedData?.name || selectedAppForRole.name || 'Applicant'
+      const emailSubject = `Role Assignment: ${finalRole} - RAC/DRDO`
+      const emailText = `Dear ${applicantName},\n\nCongratulations! Based on our AI analysis of your resume and document profile, you have been assigned the role of:\n\n**${finalRole}**\n\nYour onboarding steps will be communicated shortly.\n\nRegards,\nRecruitment & Assessment Centre (RAC)`
+      
+      try {
+          fetch('http://127.0.0.1:3001/api/send_email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                  to: selectedAppForRole.email.trim(), 
+                  subject: emailSubject, 
+                  text: emailText 
+              })
+          })
+      } catch (e) {
+          console.error("Role Email dispatch failed:", e)
+      }
+      
+      alert(`Role '${finalRole}' assigned and applicant notified!`)
+      setShowRoleModal(false)
+    } catch (err) {
+      console.error(err)
+      alert("Error assigning role: " + err.message)
+    } finally {
+      setIsAssigningRole(false)
+    }
+  }
 
   async function handleBatchVerify(appsToVerify = pendingApps) {
     if (!appsToVerify.length) return
@@ -497,12 +562,19 @@ export default function AdminDashboard() {
                         <td className="p-3 text-gray-800">{app.name}</td>
                         <td className="p-3 font-bold text-green-700">{app.gate}</td>
                         <td className="p-3">
-                          {app.status === 'Eligible' && <span className="bg-gray-100 text-gray-800 text-xs font-bold px-2 py-1 rounded border border-gray-300">Eligibility Tested</span>}
+                          {app.status === 'Eligible' && <span className="bg-gray-100 text-gray-800 text-xs font-bold px-2 py-1 rounded border border-gray-300">Awaiting Resume Upload</span>}
+                          {app.status === 'ResumeSubmitted' && <span className="bg-saffron text-white text-xs font-bold px-2 py-1 rounded">Resume Ready for Analysis</span>}
+                          {app.status === 'RoleAssigned' && <span className="bg-green-600 text-white text-xs font-bold px-2 py-1 rounded border border-green-700">Role Assigned</span>}
                         </td>
                         <td className="p-3 font-semibold text-gray-700 text-xs">
                           {app.role || <span className="text-gray-400 font-normal italic">Pending</span>}
                         </td>
                         <td className="p-3 text-right flex items-center justify-end gap-2">
+                          {app.status === 'ResumeSubmitted' && (
+                            <button onClick={() => openRoleModal(app)} className="text-xs font-bold text-white bg-drdoblue px-2 py-1 rounded hover:bg-drdolight shadow">
+                               Analyze & Assign Role
+                            </button>
+                          )}
                           <button onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} className="text-xs font-bold text-blue-600 hover:underline">
                             {expandedAppId === app.id ? 'Hide OCR Details' : 'View OCR Details'}
                           </button>
@@ -680,6 +752,63 @@ export default function AdminDashboard() {
           )}
         </div>
       </main>
+
+      {/* AI Role Assignment Modal */}
+      {showRoleModal && selectedAppForRole && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b-2 border-gray-200 pb-2 mb-4">
+              <h3 className="text-xl font-bold text-drdoblue">
+                Resume Overview & AI Role Assignment
+              </h3>
+              <button onClick={() => setShowRoleModal(false)} className="text-gray-500 hover:text-red-500 font-bold">X</button>
+            </div>
+            
+            <div className="flex flex-col md:flex-row gap-6">
+              {/* Resume Preview */}
+              <div className="w-full md:w-2/3 border-2 border-gray-200 rounded overflow-hidden h-[60vh]">
+                <iframe src={selectedAppForRole.resumeUrl} title="Resume" className="w-full h-full bg-gray-50" />
+              </div>
+              
+              {/* Role AI Assignment */}
+              <div className="w-full md:w-1/3 flex flex-col gap-4">
+                <div className="bg-blue-50 border-2 border-blue-200 p-4 rounded text-sm text-blue-900 shadow-sm">
+                  <h4 className="font-bold flex items-center gap-2 mb-2 border-b border-blue-200 pb-2">
+                    <Play size={16} className="text-drdoblue" /> AI Role Heuristic
+                  </h4>
+                  <p className="mb-2">Based on the candidate's verified B.Tech profile and extracted subject expertise, the system recommends the following role mapping:</p>
+                  <p className="font-bold text-green-700 bg-white p-2 border border-green-200 rounded text-center my-3">{aiSuggestedRole}</p>
+                </div>
+                
+                <div className="bg-gray-50 border border-gray-200 p-4 rounded shadow-sm flex-1">
+                  <h4 className="font-bold text-gray-800 mb-2">Final Assignment</h4>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Confirm or Override AI Role:</label>
+                  <select 
+                    value={customRole || aiSuggestedRole} 
+                    onChange={e => setCustomRole(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:border-drdoblue focus:ring-1 focus:ring-drdoblue mb-4"
+                  >
+                    <option value="Scientist B (Computer Science)">Scientist B (Computer Science)</option>
+                    <option value="Scientist B (Electronics & Comm)">Scientist B (Electronics & Comm)</option>
+                    <option value="Scientist B (Mechanical Engineering)">Scientist B (Mechanical Engineering)</option>
+                    <option value="Scientist B (Electrical Engineering)">Scientist B (Electrical Engineering)</option>
+                    <option value="Scientist B (Civil Engineering)">Scientist B (Civil Engineering)</option>
+                    <option value="Technical Officer">Technical Officer</option>
+                  </select>
+                  
+                  <button 
+                    onClick={handleAssignRole} 
+                    disabled={isAssigningRole}
+                    className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition-colors shadow disabled:opacity-50"
+                  >
+                    {isAssigningRole ? 'Assigning & Emailing...' : 'Confirm Role & Dispatch Email'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showVerificationModal && verificationQueue[verifyingIndex] && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
