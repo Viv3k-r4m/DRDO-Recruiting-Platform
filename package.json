@@ -10,11 +10,14 @@
     "emulators": "firebase emulators:start --project demo-drdo"
   },
   "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "firebase": "^12.19.0",
     "framer-motion": "^10.12.16",
     "jszip": "^3.10.1",
     "lucide-react": "^0.276.0",
     "node-unrar-js": "^2.0.2",
+    "nodemailer": "^10.0.14",
     "pdfjs-dist": "^6.3.289",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

@@ -189,38 +189,6 @@ def translate_api():
         except Exception as fallback_e:
             return {"error": f"All free translators failed. {str(fallback_e)}"}, 500
 
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-@app.route("/api/send_email", methods=["POST"])
-def send_email_api():
-    data = request.json
-    if not data or "to" not in data or "subject" not in data or "text" not in data:
-        return {"error": "Missing email fields"}, 400
-        
-    sender_email = "vigneshwarlal@student.tce.edu" # Replace with user's real email
-    app_password = "DRDO"            # Replace with 16-digit App Password
-    
-    try:
-        # Construct Email
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = data["to"]
-        msg['Subject'] = data["subject"]
-        msg.attach(MIMEText(data["text"], 'plain'))
-        
-        # Connect to Gmail SMTP Server securely
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(sender_email, app_password)
-        server.send_message(msg)
-        server.quit()
-        
-        return {"success": True, "message": "Email sent successfully"}
-    except Exception as e:
-        print(f"SMTP failed: {e}")
-        return {"error": f"Failed to send email. Ensure you configured your App Password in app.py. Error: {str(e)}"}, 500
-
 # Enable CORS for the API
 @app.after_request
 def after_request(response):

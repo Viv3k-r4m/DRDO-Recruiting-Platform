@@ -320,9 +320,9 @@ export default function AdminDashboard() {
           }
         })
         
-        // 2. Transmit the email instantly via Free Python SMTP
+        // 2. Transmit the email instantly via Free Node SMTP Server
         try {
-            fetch('http://127.0.0.1:5000/api/send_email', {
+            fetch('http://127.0.0.1:3001/api/send_email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
