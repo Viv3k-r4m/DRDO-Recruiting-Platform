@@ -306,14 +306,35 @@ export default function AdminDashboard() {
         const reasonText = eligibilityReasons.length
           ? `\n\nReason(s):\n${eligibilityReasons.map(reason => `- ${reason}`).join('\n')}`
           : '\n\nYou meet the eligibility criteria based on the documents reviewed.'
+          
+        const emailSubject = `Eligibility result: ${resultLabel} - RAC/DRDO application`
+        const emailText = `Dear ${applicantName},\n\nThe eligibility review for your RAC/DRDO application is complete.\n\nResult: ${resultLabel}\nApplication ID: ${app.id}${reasonText}\n\nRegards,\nRecruitment & Assessment Centre (RAC)`
+        
+        // 1. Keep a record in Firestore
         const emailRef = doc(collection(db, 'mail'))
         batch.set(emailRef, {
           to: app.email.trim(),
           message: {
-            subject: `Eligibility result: ${resultLabel} - RAC/DRDO application`,
-            text: `Dear ${applicantName},\n\nThe eligibility review for your RAC/DRDO application is complete.\n\nResult: ${resultLabel}\nApplication ID: ${app.id}${reasonText}\n\nRegards,\nRecruitment & Assessment Centre (RAC)`
+            subject: emailSubject,
+            text: emailText
           }
         })
+        
+        // 2. Transmit the email instantly via Free Python SMTP
+        try {
+            fetch('http://127.0.0.1:5000/api/send_email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    to: app.email.trim(), 
+                    subject: emailSubject, 
+                    text: emailText 
+                })
+            })
+        } catch (e) {
+            console.error("Free SMTP email dispatch failed:", e)
+        }
+        
         queuedEmails++
         processed++
 
