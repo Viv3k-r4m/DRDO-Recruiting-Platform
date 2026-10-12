@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LogOut, CheckCircle, AlertTriangle, Play } from 'lucide-react'
+import { LogOut, CheckCircle, AlertTriangle, Play, Send, UserCheck, Calendar, X } from 'lucide-react'
 import { auth, db } from '../firebase'
 import { collection, onSnapshot, doc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
 import ComparisonTable from '../components/ComparisonTable'
+import DocumentVerificationScanner3D from '../components/DocumentVerificationScanner3D'
 import { recognizeAll } from '../utils/ocr'
 import { extractBtech, extractCategory, extractFatherName } from '../utils/adminDocumentFields'
 
@@ -32,10 +33,12 @@ export default function AdminDashboard() {
 
   const pendingApps = apps.filter(a => a.status === 'Pending')
   const eligibleApps = apps.filter(a => ['Eligible', 'ResumeRequested', 'ResumeSubmitted'].includes(a.status))
+  const shortlistedApps = apps.filter(a => a.status === 'RoleAssigned' || a.status === 'Shortlisted')
   const rejectedApps = apps.filter(a => a.status === 'Rejected')
   
-  const uniqueRoles = [...new Set(eligibleApps.map(a => a.role).filter(Boolean))]
+  const uniqueRoles = [...new Set([...eligibleApps, ...shortlistedApps].map(a => a.role).filter(Boolean))]
   const displayedEligible = roleFilter === 'All' ? eligibleApps : eligibleApps.filter(a => a.role === roleFilter)
+  const displayedShortlisted = roleFilter === 'All' ? shortlistedApps : shortlistedApps.filter(a => a.role === roleFilter)
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
@@ -104,11 +107,20 @@ export default function AdminDashboard() {
       
       alert(`Role '${finalRole}' assigned and applicant notified!`)
       setShowRoleModal(false)
+      setActiveTab('Shortlisted')
     } catch (err) {
       console.error(err)
       alert("Error assigning role: " + err.message)
     } finally {
       setIsAssigningRole(false)
+    }
+  }
+
+  const handleSendInterviewDetails = (applicant = null) => {
+    if (applicant) {
+      alert(`[DRDO Interview Details Dispatcher]\n\nCandidate: ${applicant.name}\nEmail: ${applicant.email}\nAssigned Role: ${applicant.role || 'Scientist B'}\nStatus: Shortlisted for Interview\n\nNotification status: Interview schedule and reporting instructions dispatcher triggered for this participant.`)
+    } else {
+      alert(`[DRDO Interview Details Dispatcher]\n\nBatch Action: All ${shortlistedApps.length} shortlisted participant(s) selected.\n\nNotification status: Interview slot announcement notification queued for all shortlisted participants.`)
     }
   }
 
@@ -433,21 +445,36 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
-      <header className="bg-white shadow-sm flex flex-col border-b-4 border-b-drdoblue sticky top-0 z-10">
+      <div className="bg-navy text-white py-1 px-4 text-xs flex justify-between items-center z-10 relative">
+        <div className="flex gap-4">
+          <span>भारत सरकार | GOVERNMENT OF INDIA</span>
+          <span className="hidden md:inline">रक्षा मंत्रालय | MINISTRY OF DEFENCE</span>
+        </div>
+        <div className="flex gap-4 text-gray-300">
+          <span className="font-bold text-white">RAC CENTRAL ADMIN (SIH1652)</span>
+        </div>
+      </div>
+
+      <header className="bg-white shadow-sm flex flex-col sticky top-0 z-20">
         <div className="mx-auto max-w-7xl px-4 py-3 flex justify-between items-center w-full">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-full border-2 border-drdoblue flex items-center justify-center p-1 bg-white">
-              <img src="https://drdo.gov.in/drdo/sites/default/files/drdo_logo_0.png" alt="DRDO Logo" className="h-full object-contain" />
+            <div className="h-12 w-12 rounded-full border-2 border-drdoblue flex items-center justify-center p-0.5 bg-white shrink-0 overflow-hidden shadow-xs">
+              <img src="/drdo_logo.svg" alt="DRDO Logo" className="h-full w-full object-contain" onError={(e) => { e.currentTarget.src = '/emblem.svg' }} />
             </div>
-            <div className="border-l-2 border-gray-300 h-10 mx-2"></div>
+            <div className="border-l-2 border-gray-300 h-10 mx-1 sm:mx-2"></div>
             <div>
-              <h1 className="text-xl font-bold text-drdoblue leading-tight">भर्ती एवं मूल्यांकन केंद्र (रेक)</h1>
-              <h2 className="text-sm font-bold text-gray-700">Recruitment & Assessment Centre (RAC)</h2>
+              <h1 className="text-lg sm:text-xl font-bold text-drdoblue leading-tight">भर्ती एवं मूल्यांकन केंद्र (रेक)</h1>
+              <h2 className="text-xs sm:text-sm font-bold text-gray-700">Recruitment & Assessment Centre (RAC)</h2>
             </div>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 rounded bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 shadow transition-colors">
-            <LogOut size={16} /> Logout
+          <button onClick={handleLogout} className="flex items-center gap-2 rounded bg-red-600 px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold text-white hover:bg-red-700 shadow transition-colors">
+            <LogOut size={15} /> Logout
           </button>
+        </div>
+        <div className="h-1.5 w-full flex">
+          <div className="h-full w-1/3 bg-saffron"></div>
+          <div className="h-full w-1/3 bg-white border-y border-gray-300"></div>
+          <div className="h-full w-1/3 bg-indiagreen"></div>
         </div>
       </header>
 
@@ -457,7 +484,7 @@ export default function AdminDashboard() {
           <p className="mt-2 text-gray-600 text-sm">Batch Application Processing & Verification (SIH1652)</p>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="bg-white border border-gray-300 rounded shadow-sm p-4 border-l-4 border-l-drdoblue">
             <p className="text-xs font-bold text-gray-500 uppercase">Total Received</p>
             <p className="text-2xl font-black text-gray-800 mt-1">{apps.length}</p>
@@ -466,9 +493,13 @@ export default function AdminDashboard() {
             <p className="text-xs font-bold text-gray-500 uppercase">Pending Verification</p>
             <p className="text-2xl font-black text-gray-800 mt-1">{pendingApps.length}</p>
           </div>
-          <div className="bg-white border border-gray-300 rounded shadow-sm p-4 border-l-4 border-l-green-600 cursor-pointer hover:bg-gray-50" onClick={() => setActiveTab('Eligible')}>
-            <p className="text-xs font-bold text-gray-500 uppercase">Eligible & Processing</p>
+          <div className="bg-white border border-gray-300 rounded shadow-sm p-4 border-l-4 border-l-blue-600 cursor-pointer hover:bg-gray-50" onClick={() => setActiveTab('Eligible')}>
+            <p className="text-xs font-bold text-gray-500 uppercase">Eligible (In Review)</p>
             <p className="text-2xl font-black text-gray-800 mt-1">{eligibleApps.length}</p>
+          </div>
+          <div className="bg-white border border-gray-300 rounded shadow-sm p-4 border-l-4 border-l-indigo-600 cursor-pointer hover:bg-gray-50" onClick={() => setActiveTab('Shortlisted')}>
+            <p className="text-xs font-bold text-indigo-700 uppercase">Shortlisted Participants</p>
+            <p className="text-2xl font-black text-indigo-800 mt-1">{shortlistedApps.length}</p>
           </div>
           <div className="bg-white border border-gray-300 rounded shadow-sm p-4 border-l-4 border-l-red-600 cursor-pointer hover:bg-gray-50" onClick={() => setActiveTab('Rejected')}>
             <p className="text-xs font-bold text-gray-500 uppercase">Rejected</p>
@@ -476,14 +507,22 @@ export default function AdminDashboard() {
           </div>
         </motion.div>
 
-        <div className="flex gap-2 border-b border-gray-300">
-          {['Pending', 'Eligible', 'Rejected'].map(tab => (
+        <div className="flex gap-2 border-b border-gray-300 flex-wrap">
+          {[
+            { id: 'Pending', label: 'Pending List', count: pendingApps.length },
+            { id: 'Eligible', label: 'Eligible Candidates', count: eligibleApps.length },
+            { id: 'Shortlisted', label: 'Shortlisted Participants', count: shortlistedApps.length },
+            { id: 'Rejected', label: 'Rejected List', count: rejectedApps.length },
+          ].map(tab => (
             <button 
-              key={tab} 
-              onClick={() => setActiveTab(tab)}
-              className={`px-6 py-3 font-bold text-sm transition-colors ${activeTab === tab ? 'bg-drdoblue text-white rounded-t' : 'bg-gray-200 text-gray-600 hover:bg-gray-300 rounded-t'}`}
+              key={tab.id} 
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-5 py-3 font-bold text-sm transition-colors flex items-center gap-2 ${activeTab === tab.id ? 'bg-drdoblue text-white rounded-t shadow' : 'bg-gray-200 text-gray-600 hover:bg-gray-300 rounded-t'}`}
             >
-              {tab} List
+              <span>{tab.label}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-black ${activeTab === tab.id ? 'bg-white text-drdoblue' : 'bg-gray-300 text-gray-700'}`}>
+                {tab.count}
+              </span>
             </button>
           ))}
         </div>
@@ -505,29 +544,37 @@ export default function AdminDashboard() {
                   )}
                 </button>
               </div>
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-gray-600">
-                  <tr>
-                    <th className="p-3 border-b border-gray-300 font-bold">App ID</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Candidate Name</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Uploaded Docs</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingApps.map(app => (
-                    <tr key={app.id} className="border-b border-gray-200 hover:bg-gray-50">
-                      <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
-                      <td className="p-3 text-gray-800">{app.name}</td>
-                      <td className="p-3 text-gray-800 text-xs">
-                        {app.documents ? app.documents.map(d => typeof d === 'string' ? d : d.name).join(', ') : 'None'}
-                      </td>
-                      <td className="p-3 text-gray-500 text-xs">{app.date}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[650px]">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="p-3 border-b border-gray-300 font-bold">App ID</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Candidate Name</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Uploaded Docs</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Date</th>
                     </tr>
-                  ))}
-                  {pendingApps.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-gray-500">No pending applications.</td></tr>}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {pendingApps.map(app => (
+                      <tr key={app.id} className="border-b border-gray-200 hover:bg-gray-50">
+                        <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
+                        <td className="p-3 text-gray-800 font-bold">{app.name}</td>
+                        <td className="p-3 text-gray-800 text-xs">
+                          {app.documents ? app.documents.map(d => typeof d === 'string' ? d : d.name).join(', ') : 'None'}
+                        </td>
+                        <td className="p-3 text-gray-500 text-xs">{app.date}</td>
+                      </tr>
+                    ))}
+                    {pendingApps.length === 0 && (
+                      <tr>
+                        <td colSpan="4" className="p-8 text-center text-gray-500">
+                          No pending applications.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -543,43 +590,46 @@ export default function AdminDashboard() {
                   </select>
                 </div>
               </div>
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-gray-600">
-                  <tr>
-                    <th className="p-3 border-b border-gray-300 font-bold">App ID</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Candidate Name</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Extracted GATE</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Workflow Status</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Assigned Role</th>
-                    <th className="p-3 border-b border-gray-300 font-bold text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayedEligible.map(app => (
-                    <React.Fragment key={app.id}>
-                      <tr className="border-b border-gray-200 hover:bg-gray-50">
-                        <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
-                        <td className="p-3 text-gray-800">{app.name}</td>
-                        <td className="p-3 font-bold text-green-700">{app.gate}</td>
-                        <td className="p-3">
-                          {app.status === 'Eligible' && <span className="bg-gray-100 text-gray-800 text-xs font-bold px-2 py-1 rounded border border-gray-300">Awaiting Resume Upload</span>}
-                          {app.status === 'ResumeSubmitted' && <span className="bg-saffron text-white text-xs font-bold px-2 py-1 rounded">Resume Ready for Analysis</span>}
-                          {app.status === 'RoleAssigned' && <span className="bg-green-600 text-white text-xs font-bold px-2 py-1 rounded border border-green-700">Role Assigned</span>}
-                        </td>
-                        <td className="p-3 font-semibold text-gray-700 text-xs">
-                          {app.role || <span className="text-gray-400 font-normal italic">Pending</span>}
-                        </td>
-                        <td className="p-3 text-right flex items-center justify-end gap-2">
-                          {app.status === 'ResumeSubmitted' && (
-                            <button onClick={() => openRoleModal(app)} className="text-xs font-bold text-white bg-drdoblue px-2 py-1 rounded hover:bg-drdolight shadow">
-                               Analyze & Assign Role
-                            </button>
-                          )}
-                          <button onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} className="text-xs font-bold text-blue-600 hover:underline">
-                            {expandedAppId === app.id ? 'Hide OCR Details' : 'View OCR Details'}
-                          </button>
-                        </td>
-                      </tr>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[850px]">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="p-3 border-b border-gray-300 font-bold">App ID</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Candidate Name</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Extracted GATE</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Workflow Status</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Assigned Role</th>
+                      <th className="p-3 border-b border-gray-300 font-bold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedEligible.map(app => (
+                      <React.Fragment key={app.id}>
+                        <tr className="border-b border-gray-200 hover:bg-gray-50">
+                          <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
+                          <td className="p-3 text-gray-800 font-bold">{app.name}</td>
+                          <td className="p-3 font-bold text-green-700">{app.gate}</td>
+                          <td className="p-3">
+                            {app.status === 'Eligible' && <span className="bg-gray-100 text-gray-800 text-xs font-bold px-2 py-1 rounded border border-gray-300">Awaiting Resume Upload</span>}
+                            {app.status === 'ResumeSubmitted' && <span className="bg-saffron text-white text-xs font-bold px-2 py-1 rounded">Resume Ready for Analysis</span>}
+                            {app.status === 'RoleAssigned' && <span className="bg-green-600 text-white text-xs font-bold px-2 py-1 rounded border border-green-700">Role Assigned</span>}
+                          </td>
+                          <td className="p-3 font-semibold text-gray-700 text-xs">
+                            {app.role || <span className="text-gray-400 font-normal italic">Pending</span>}
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-2">
+                              {app.status === 'ResumeSubmitted' && (
+                                <button onClick={() => openRoleModal(app)} className="text-xs font-bold text-white bg-drdoblue px-2.5 py-1.5 rounded hover:bg-drdolight shadow transition-colors">
+                                   Analyze & Assign Role
+                                </button>
+                              )}
+                              <button onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} className="text-xs font-bold text-blue-600 hover:underline">
+                                {expandedAppId === app.id ? 'Hide OCR Details' : 'View OCR Details'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                       {expandedAppId === app.id && (
                         <tr>
                           <td colSpan="6" className="p-0 border-b border-gray-300">
@@ -646,6 +696,147 @@ export default function AdminDashboard() {
                   {displayedEligible.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-gray-500">No candidates in this list.</td></tr>}
                 </tbody>
               </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'Shortlisted' && (
+            <div>
+              <div className="bg-gray-100 px-4 py-3 border-b border-gray-300 flex justify-between items-center flex-wrap gap-2">
+                <div>
+                  <span className="font-bold text-gray-700 text-base">Shortlisted Participants ({shortlistedApps.length})</span>
+                  <p className="text-xs text-gray-500 mt-0.5">Participants with confirmed role allocation ready for interview scheduling</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => handleSendInterviewDetails()}
+                    disabled={shortlistedApps.length === 0}
+                    className="flex items-center gap-2 px-4 py-2 rounded font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow disabled:opacity-50"
+                  >
+                    <Send size={16} /> Send Interview Details
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[850px]">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="p-3 border-b border-gray-300 font-bold">App ID</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Candidate Name</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Assigned Role</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">GATE / Stream</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Interview Status</th>
+                      <th className="p-3 border-b border-gray-300 font-bold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedShortlisted.map(app => (
+                      <React.Fragment key={app.id}>
+                        <tr className="border-b border-gray-200 hover:bg-gray-50">
+                          <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
+                          <td className="p-3">
+                            <p className="font-bold text-gray-800">{app.name}</p>
+                            <p className="text-xs text-gray-500">{app.email}</p>
+                          </td>
+                          <td className="p-3">
+                            <span className="bg-green-100 text-green-800 text-xs font-bold px-2.5 py-1 rounded border border-green-300 inline-flex items-center gap-1.5 shadow-xs">
+                              <CheckCircle size={13} className="text-green-600" />
+                              {app.role || 'Scientist B'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-xs font-semibold text-gray-700">
+                            GATE: <span className="text-green-700 font-bold">{app.gate}</span> ({app.extractedData?.paper || 'CS'})
+                          </td>
+                          <td className="p-3">
+                            <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded border border-indigo-200 inline-flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-indigo-600"></span>
+                              Shortlisted for Interview
+                            </span>
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-2">
+                              <button 
+                                onClick={() => handleSendInterviewDetails(app)} 
+                                className="text-xs font-bold text-white bg-indigo-600 px-3 py-1.5 rounded hover:bg-indigo-700 shadow flex items-center gap-1 transition-colors"
+                              >
+                                <Send size={12} /> Send Interview Details
+                              </button>
+                              {app.resumeUrl && (
+                                <a 
+                                  href={app.resumeUrl} 
+                                  target="_blank" 
+                                  rel="noreferrer" 
+                                  className="text-xs font-bold text-drdoblue hover:underline ml-1"
+                                >
+                                  Resume ↗
+                                </a>
+                              )}
+                              <button 
+                                onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} 
+                                className="text-xs font-bold text-blue-600 hover:underline"
+                              >
+                                {expandedAppId === app.id ? 'Hide OCR' : 'View OCR'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {expandedAppId === app.id && (
+                          <tr>
+                            <td colSpan="6" className="p-0 border-b border-gray-300">
+                               <div className="p-4 bg-indigo-50/40 shadow-inner">
+                                 <div className="flex justify-between items-center mb-3">
+                                   <h4 className="font-bold text-sm text-gray-700">Verified Profile & Interview Shortlist Summary</h4>
+                                   <span className="text-xs bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded">Role Confirmed: {app.role}</span>
+                                 </div>
+                                 <div className="bg-white rounded overflow-hidden shadow-sm border border-gray-200">
+                                   <ComparisonTable 
+                                      extracted={{
+                                        name: app.extractedData?.name || app.name,
+                                        fatherName: app.extractedData?.fatherName || 'SRI ' + app.name.toUpperCase(),
+                                        dob: app.extractedData?.dob || '12-05-1996',
+                                        category: app.extractedData?.category || 'GENERAL',
+                                        class12: app.extractedData?.class12 || '0%',
+                                        btech: app.extractedData?.btech || '0 CGPA',
+                                        gate: { 
+                                          score: app.extractedData?.gate || 0, 
+                                          air: app.extractedData?.gateAir || 0, 
+                                          paper: app.extractedData?.paper || 'CS', 
+                                          year: app.extractedData?.gateYear || '2024' 
+                                        }
+                                      }} 
+                                      application={{
+                                        name: app.name,
+                                        fatherName: app.extractedData?.fatherName || 'SRI ' + app.name.toUpperCase(),
+                                        dob: 'Age <= 35 (UR) / 38 (OBC) / 40 (SC/ST)',
+                                        category: 'UR / EWS / OBC-NCL / SC / ST / PwD',
+                                        class12: '>= 60%',
+                                        btech: '>= 6.75 CGPA or 60%',
+                                        gate: { 
+                                          score: '>= 700', 
+                                          air: 'Any', 
+                                          paper: 'Matches Degree', 
+                                          year: '2024, 2025, or 2026' 
+                                        }
+                                      }} 
+                                      show={true} 
+                                   />
+                                 </div>
+                               </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {displayedShortlisted.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="p-8 text-center text-gray-500">
+                          No shortlisted participants yet. Assigned roles from the Eligible tab will appear here.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -654,100 +845,104 @@ export default function AdminDashboard() {
               <div className="bg-gray-100 px-4 py-3 border-b border-gray-300 font-bold text-gray-700">
                 Rejected Candidates ({rejectedApps.length})
               </div>
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-gray-600">
-                  <tr>
-                    <th className="p-3 border-b border-gray-300 font-bold">App ID</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Candidate Name</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Extracted GATE</th>
-                    <th className="p-3 border-b border-gray-300 font-bold">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rejectedApps.map(app => (
-                    <React.Fragment key={app.id}>
-                      <tr className="border-b border-gray-200 hover:bg-gray-50">
-                        <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
-                        <td className="p-3 text-gray-800">{app.name}</td>
-                        <td className="p-3 font-bold text-red-600">{app.gate}</td>
-                        <td className="p-3 flex items-center justify-between gap-3">
-                          <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded border border-red-200">REJECTED</span>
-                          <div className="flex items-center gap-3">
-                            <button onClick={() => handleBatchVerify([app])} disabled={isVerifying} className="text-xs font-bold text-drdoblue hover:underline disabled:opacity-50">
-                              Re-run AI
-                            </button>
-                            <button onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} className="text-xs font-bold text-blue-600 hover:underline">
-                              {expandedAppId === app.id ? 'Hide OCR' : 'View OCR Details'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {expandedAppId === app.id && (
-                        <tr>
-                          <td colSpan="4" className="p-0 border-b border-gray-300">
-                             <div className="p-4 bg-red-50/50 shadow-inner">
-                               <h4 className="font-bold text-sm text-gray-700 mb-2">Machine Learning Document Extraction Results</h4>
-                               
-                               {app.extractedData?.tamperAlerts?.length > 0 && (
-                                 <div className="mb-4 bg-red-100 border-l-4 border-red-600 p-4 rounded">
-                                   <div className="flex items-center gap-2 mb-2">
-                                     <AlertTriangle size={18} className="text-red-600" />
-                                     <strong className="text-red-800 text-sm">SECURITY ALERT: Document Tampering Detected</strong>
-                                   </div>
-                                   <ul className="list-disc list-inside text-xs text-red-700">
-                                     {app.extractedData.tamperAlerts.map((alert, idx) => <li key={idx}>{alert}</li>)}
-                                   </ul>
-                                 </div>
-                               )}
-                               
-                               <div className="bg-white rounded overflow-hidden shadow-sm border border-gray-200">
-                                 <ComparisonTable 
-                                    extracted={{
-                                      name: app.extractedData?.name || app.name,
-                                      fatherName: app.extractedData?.fatherName || 'SRI ' + app.name.toUpperCase(),
-                                      dob: app.extractedData?.dob || '12-05-1996',
-                                      category: app.extractedData?.category || 'GENERAL',
-                                      class12: app.extractedData?.class12 || '0%',
-                                      btech: app.extractedData?.btech || '0 CGPA',
-                                      gate: { 
-                                        score: app.extractedData?.gate || 0, 
-                                        air: app.extractedData?.gateAir || 0, 
-                                        paper: app.extractedData?.paper || 'CS', 
-                                        year: app.extractedData?.gateYear || '2024' 
-                                      }
-                                    }} 
-                                    application={{
-                                      name: app.name,
-                                      fatherName: app.extractedData?.fatherName || 'SRI ' + app.name.toUpperCase(), // Assuming application form will be updated later, just make it match
-                                      dob: 'Age <= 35 (UR) / 38 (OBC) / 40 (SC/ST)',
-                                      category: 'UR / EWS / OBC-NCL / SC / ST / PwD',
-                                      class12: '>= 60%',
-                                      btech: '>= 6.75 CGPA or 60%',
-                                      gate: { 
-                                        score: '>= 700', 
-                                        air: 'Any', 
-                                        paper: 'Matches Degree', 
-                                        year: '2024, 2025, or 2026' 
-                                      }
-                                    }} 
-                                    show={true} 
-                                 />
-                               </div>
-                               {app.extractedData?.rawText && (
-                                 <div className="mt-4">
-                                   <p className="text-xs font-bold text-gray-500 mb-1">Raw Tesseract Dump:</p>
-                                   <pre className="text-[10px] bg-gray-800 text-green-400 p-2 rounded max-h-32 overflow-y-auto w-full whitespace-pre-wrap">{app.extractedData.rawText}</pre>
-                                 </div>
-                               )}
-                             </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[650px]">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="p-3 border-b border-gray-300 font-bold">App ID</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Candidate Name</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Extracted GATE</th>
+                      <th className="p-3 border-b border-gray-300 font-bold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rejectedApps.map(app => (
+                      <React.Fragment key={app.id}>
+                        <tr className="border-b border-gray-200 hover:bg-gray-50">
+                          <td className="p-3 font-semibold text-drdoblue">{app.id.substring(0,8).toUpperCase()}</td>
+                          <td className="p-3 font-bold text-gray-800">{app.name}</td>
+                          <td className="p-3 font-bold text-red-600">{app.gate}</td>
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded border border-red-200">REJECTED</span>
+                              <div className="flex items-center gap-3">
+                                <button onClick={() => handleBatchVerify([app])} disabled={isVerifying} className="text-xs font-bold text-drdoblue hover:underline disabled:opacity-50">
+                                  Re-run AI
+                                </button>
+                                <button onClick={() => setExpandedAppId(expandedAppId === app.id ? null : app.id)} className="text-xs font-bold text-blue-600 hover:underline">
+                                  {expandedAppId === app.id ? 'Hide OCR' : 'View OCR Details'}
+                                </button>
+                              </div>
+                            </div>
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                  {rejectedApps.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-gray-500">No rejected applications.</td></tr>}
-                </tbody>
-              </table>
+                        {expandedAppId === app.id && (
+                          <tr>
+                            <td colSpan="4" className="p-0 border-b border-gray-300">
+                               <div className="p-4 bg-red-50/50 shadow-inner">
+                                 <h4 className="font-bold text-sm text-gray-700 mb-2">Machine Learning Document Extraction Results</h4>
+                                 
+                                 {app.extractedData?.tamperAlerts?.length > 0 && (
+                                   <div className="mb-4 bg-red-100 border-l-4 border-red-600 p-4 rounded">
+                                     <div className="flex items-center gap-2 mb-2">
+                                       <AlertTriangle size={18} className="text-red-600" />
+                                       <strong className="text-red-800 text-sm">SECURITY ALERT: Document Tampering Detected</strong>
+                                     </div>
+                                     <ul className="list-disc list-inside text-xs text-red-700">
+                                       {app.extractedData.tamperAlerts.map((alert, idx) => <li key={idx}>{alert}</li>)}
+                                     </ul>
+                                   </div>
+                                 )}
+                                 
+                                 <div className="bg-white rounded overflow-hidden shadow-sm border border-gray-200">
+                                   <ComparisonTable 
+                                      extracted={{
+                                        name: app.extractedData?.name || app.name,
+                                        fatherName: app.extractedData?.fatherName || 'SRI ' + app.name.toUpperCase(),
+                                        dob: app.extractedData?.dob || '12-05-1996',
+                                        category: app.extractedData?.category || 'GENERAL',
+                                        class12: app.extractedData?.class12 || '0%',
+                                        btech: app.extractedData?.btech || '0 CGPA',
+                                        gate: { 
+                                          score: app.extractedData?.gate || 0, 
+                                          air: app.extractedData?.gateAir || 0, 
+                                          paper: app.extractedData?.paper || 'CS', 
+                                          year: app.extractedData?.gateYear || '2024' 
+                                        }
+                                      }} 
+                                      application={{
+                                        name: app.name,
+                                        fatherName: app.extractedData?.fatherName || 'SRI ' + app.name.toUpperCase(),
+                                        dob: 'Age <= 35 (UR) / 38 (OBC) / 40 (SC/ST)',
+                                        category: 'UR / EWS / OBC-NCL / SC / ST / PwD',
+                                        class12: '>= 60%',
+                                        btech: '>= 6.75 CGPA or 60%',
+                                        gate: { 
+                                          score: '>= 700', 
+                                          air: 'Any', 
+                                          paper: 'Matches Degree', 
+                                          year: '2024, 2025, or 2026' 
+                                        }
+                                      }} 
+                                      show={true} 
+                                   />
+                                 </div>
+                                 {app.extractedData?.rawText && (
+                                   <div className="mt-4">
+                                     <p className="text-xs font-bold text-gray-500 mb-1">Raw Tesseract Dump:</p>
+                                     <pre className="text-[10px] bg-gray-800 text-green-400 p-2 rounded max-h-32 overflow-y-auto w-full whitespace-pre-wrap">{app.extractedData.rawText}</pre>
+                                   </div>
+                                 )}
+                               </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {rejectedApps.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-gray-500">No rejected applications.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -755,53 +950,86 @@ export default function AdminDashboard() {
 
       {/* AI Role Assignment Modal */}
       {showRoleModal && selectedAppForRole && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b-2 border-gray-200 pb-2 mb-4">
-              <h3 className="text-xl font-bold text-drdoblue">
-                Resume Overview & AI Role Assignment
-              </h3>
-              <button onClick={() => setShowRoleModal(false)} className="text-gray-500 hover:text-red-500 font-bold">X</button>
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b-2 border-gray-200 pb-3 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-drdoblue">
+                  Resume Overview & AI Role Assignment
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Candidate: <strong className="text-gray-800">{selectedAppForRole.name}</strong> ({selectedAppForRole.email})
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowRoleModal(false)} 
+                className="p-1.5 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                title="Close Modal"
+              >
+                <X size={20} />
+              </button>
             </div>
             
             <div className="flex flex-col md:flex-row gap-6">
               {/* Resume Preview */}
-              <div className="w-full md:w-2/3 border-2 border-gray-200 rounded overflow-hidden h-[60vh]">
-                <iframe src={selectedAppForRole.resumeUrl} title="Resume" className="w-full h-full bg-gray-50" />
+              <div className="w-full md:w-2/3 border-2 border-gray-200 rounded-lg overflow-hidden h-[60vh] flex flex-col bg-gray-50">
+                <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-200 flex justify-between items-center text-xs text-gray-600">
+                  <span className="font-semibold">Document: {selectedAppForRole.name}'s Resume</span>
+                  {selectedAppForRole.resumeUrl && (
+                    <a href={selectedAppForRole.resumeUrl} target="_blank" rel="noreferrer" className="text-blue-600 font-bold hover:underline">
+                      Open Full Screen ↗
+                    </a>
+                  )}
+                </div>
+                {selectedAppForRole.resumeUrl ? (
+                  <iframe src={selectedAppForRole.resumeUrl} title="Resume Preview" className="w-full flex-1 border-0" />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-500">
+                    <FileText size={48} className="text-gray-300 mb-2" />
+                    <p className="font-bold text-gray-700">No Resume File URL Found</p>
+                    <p className="text-xs text-gray-500 mt-1">Applicant has not uploaded a valid resume document.</p>
+                  </div>
+                )}
               </div>
               
               {/* Role AI Assignment */}
               <div className="w-full md:w-1/3 flex flex-col gap-4">
-                <div className="bg-blue-50 border-2 border-blue-200 p-4 rounded text-sm text-blue-900 shadow-sm">
+                <div className="bg-blue-50 border-2 border-blue-200 p-4 rounded-lg text-sm text-blue-900 shadow-xs">
                   <h4 className="font-bold flex items-center gap-2 mb-2 border-b border-blue-200 pb-2">
-                    <Play size={16} className="text-drdoblue" /> AI Role Heuristic
+                    <Play size={16} className="text-drdoblue" /> AI Specialization Heuristic
                   </h4>
-                  <p className="mb-2">Based on the candidate's verified B.Tech profile and extracted subject expertise, the system recommends the following role mapping:</p>
-                  <p className="font-bold text-green-700 bg-white p-2 border border-green-200 rounded text-center my-3">{aiSuggestedRole}</p>
+                  <p className="text-xs text-blue-800 leading-relaxed mb-2">
+                    Based on verified B.Tech discipline (<strong>{selectedAppForRole.extractedData?.paper || 'CS'}</strong>) and GATE performance:
+                  </p>
+                  <p className="font-bold text-green-800 bg-white p-2.5 border border-green-300 rounded text-center my-2 shadow-xs text-xs md:text-sm">
+                    {aiSuggestedRole}
+                  </p>
                 </div>
                 
-                <div className="bg-gray-50 border border-gray-200 p-4 rounded shadow-sm flex-1">
-                  <h4 className="font-bold text-gray-800 mb-2">Final Assignment</h4>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">Confirm or Override AI Role:</label>
-                  <select 
-                    value={customRole || aiSuggestedRole} 
-                    onChange={e => setCustomRole(e.target.value)}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:border-drdoblue focus:ring-1 focus:ring-drdoblue mb-4"
-                  >
-                    <option value="Scientist B (Computer Science)">Scientist B (Computer Science)</option>
-                    <option value="Scientist B (Electronics & Comm)">Scientist B (Electronics & Comm)</option>
-                    <option value="Scientist B (Mechanical Engineering)">Scientist B (Mechanical Engineering)</option>
-                    <option value="Scientist B (Electrical Engineering)">Scientist B (Electrical Engineering)</option>
-                    <option value="Scientist B (Civil Engineering)">Scientist B (Civil Engineering)</option>
-                    <option value="Technical Officer">Technical Officer</option>
-                  </select>
+                <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-xs flex-1 flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-gray-800 mb-2 text-sm">Role Allocation</h4>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">Confirm or Override Role:</label>
+                    <select 
+                      value={customRole || aiSuggestedRole} 
+                      onChange={e => setCustomRole(e.target.value)}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:border-drdoblue focus:ring-2 focus:ring-drdoblue/20 outline-none mb-4 bg-white"
+                    >
+                      <option value="Scientist B (Computer Science)">Scientist B (Computer Science)</option>
+                      <option value="Scientist B (Electronics & Comm)">Scientist B (Electronics & Comm)</option>
+                      <option value="Scientist B (Mechanical Engineering)">Scientist B (Mechanical Engineering)</option>
+                      <option value="Scientist B (Electrical Engineering)">Scientist B (Electrical Engineering)</option>
+                      <option value="Scientist B (Civil Engineering)">Scientist B (Civil Engineering)</option>
+                      <option value="Technical Officer">Technical Officer</option>
+                    </select>
+                  </div>
                   
                   <button 
                     onClick={handleAssignRole} 
                     disabled={isAssigningRole}
-                    className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition-colors shadow disabled:opacity-50"
+                    className="w-full bg-green-600 text-white font-bold py-3 rounded-md hover:bg-green-700 transition-colors shadow disabled:opacity-50 text-xs md:text-sm"
                   >
-                    {isAssigningRole ? 'Assigning & Emailing...' : 'Confirm Role & Dispatch Email'}
+                    {isAssigningRole ? 'Assigning & Dispatching Email...' : 'Confirm Role & Dispatch Email'}
                   </button>
                 </div>
               </div>
@@ -810,31 +1038,15 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* 3D Holographic Verification Scanner Modal */}
       {showVerificationModal && verificationQueue[verifyingIndex] && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b-2 border-gray-200 pb-2 mb-4">
-              <h3 className="text-xl font-bold text-drdoblue">
-                Scanning Candidate: <span className="text-gray-800">{verificationQueue[verifyingIndex].name}</span>
-              </h3>
-            </div>
-            
-            <div className="mb-6 bg-blue-50 border-l-4 border-blue-600 p-4 rounded text-sm text-blue-800 font-mono">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="animate-pulse h-2 w-2 bg-blue-600 rounded-full"></div>
-                <strong>System Status:</strong>
-              </div>
-              {modalState}
-            </div>
-
-            <div className="border border-gray-200 rounded p-4 text-center">
-              <p className="text-gray-500 text-sm mb-2">The system is currently extracting and analyzing this candidate's files.</p>
-              <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
-                <div className="bg-blue-600 h-2 rounded-full animate-pulse w-2/3"></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DocumentVerificationScanner3D
+          app={verificationQueue[verifyingIndex]}
+          queueIndex={verifyingIndex + 1}
+          queueTotal={verificationQueue.length}
+          modalState={modalState}
+          onClose={() => setShowVerificationModal(false)}
+        />
       )}
     </div>
   )
